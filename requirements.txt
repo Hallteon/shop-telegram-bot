@@ -1,3 +1,6 @@
 aiogram==2.20
 psycopg2==2.9.3
 environs==9.5.0
+beautifulsoup4==4.11.1
+requests==2.28.1
+lxml==4.9.1
