@@ -6,3 +6,7 @@ class Add_Good_State(StatesGroup):
     get_author = State()
     get_price = State()
     get_image = State()
+
+
+class Get_Goods_Page(StatesGroup):
+     page = State()

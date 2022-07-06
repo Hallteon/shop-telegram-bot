@@ -1,9 +1,11 @@
 from aiogram import types
+from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command
 from aiogram.types import LabeledPrice, ContentType
 
 from data.config import PAYMENTS_TOKEN
 from loader import dp, bot
+from states.shop_states import Get_Goods_Page
 from utils.db_suff.db_functions import get_good_from_db
 from utils.inline_keyboards import shop_keyboard, get_all_goods_keyboard
 from utils.payments import post_shipping_option, to_home_shipping_option, pickup_shipping_option
@@ -12,16 +14,49 @@ from utils.payments import post_shipping_option, to_home_shipping_option, pickup
 @dp.message_handler(Command("shop"), chat_type=types.ChatType.PRIVATE)
 async def send_shop(message: types.Message):
     await message.answer("<b>Вы зашли в меню магазина</b>", reply_markup=shop_keyboard)
+    await Get_Goods_Page.first()
 
 
-@dp.callback_query_handler(text="catalog", chat_type=types.ChatType.PRIVATE)
-async def send_catalog(callback: types.CallbackQuery):
+@dp.callback_query_handler(text="catalog", state=Get_Goods_Page.page)
+async def send_catalog_start(callback: types.CallbackQuery, state: FSMContext):
+    keyboards = await get_all_goods_keyboard("get")
+
     await callback.message.edit_text("<b>Каталог товаров:</b>")
-    await callback.message.edit_reply_markup(reply_markup=await get_all_goods_keyboard("get"))
+    await callback.message.edit_reply_markup(reply_markup=keyboards[1])
+
+    async with state.proxy() as data:
+        data["keyboards"] = keyboards
+        data["page"] = 1
 
 
-@dp.callback_query_handler(text_contains="get_good")
-async def send_good(callback: types.CallbackQuery):
+@dp.callback_query_handler(text="next_page", state=Get_Goods_Page.page)
+async def send_next_page(callback: types.CallbackQuery, state: FSMContext):
+    async with state.proxy() as data:
+        data["page"] += 1
+
+    state_data = await state.get_data()
+    keyboards = state_data["keyboards"]
+    page = state_data["page"]
+
+    await callback.message.edit_text("<b>Каталог товаров:</b>")
+    await callback.message.edit_reply_markup(reply_markup=keyboards[page])
+
+
+@dp.callback_query_handler(text="previous_page", state=Get_Goods_Page.page)
+async def send_previous_page(callback: types.CallbackQuery, state: FSMContext):
+    async with state.proxy() as data:
+        data["page"] -= 1
+
+    state_data = await state.get_data()
+    keyboards = state_data["keyboards"]
+    page = state_data["page"]
+
+    await callback.message.edit_text("<b>Каталог товаров:</b>")
+    await callback.message.edit_reply_markup(reply_markup=keyboards[page])
+
+
+@dp.callback_query_handler(text_contains="get_good", state=Get_Goods_Page.page)
+async def send_good(callback: types.CallbackQuery, state: FSMContext):
     callback_data = callback.data.strip().split(":")[1:]
     good_id = int(callback_data[0])
     good_information = await get_good_from_db(good_id)
@@ -42,6 +77,9 @@ async def send_good(callback: types.CallbackQuery):
                            start_parameter="buy_book",
                            payload="book",
                            need_phone_number=True)
+
+    await callback.message.delete()
+    await state.reset_state()
 
 
 @dp.shipping_query_handler(lambda query: True)
@@ -72,14 +110,16 @@ async def successful_payment(message: types.Message):
                          "получите свой заказ.</b>")
 
 
-@dp.callback_query_handler(text="back_to_shop_menu")
-async def back_to_shop_menu(callback: types.CallbackQuery):
+@dp.callback_query_handler(text="back_to_shop_menu", state=Get_Goods_Page.page)
+async def back_to_shop_menu(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.delete()
+    await state.reset_state()
+
     await send_shop(callback.message)
 
 
-@dp.callback_query_handler(text="exit_from_shop")
-async def exit_from_shop(callback: types.CallbackQuery):
+@dp.callback_query_handler(text="exit_from_shop", state=Get_Goods_Page.page)
+async def exit_from_shop(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.delete()
-
+    await state.reset_state()
 

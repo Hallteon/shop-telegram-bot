@@ -4,7 +4,7 @@ from aiogram.dispatcher.filters import Command
 
 from filters import Is_Admin
 from loader import dp
-from states.shop_states import Add_Good_State
+from states.shop_states import Add_Good_State, Get_Goods_Page
 from utils.db_suff.db_functions import add_good_to_db, remove_good_from_db
 from utils.inline_keyboards import admin_panel, get_all_goods_keyboard, return_to_admin_panel
 
@@ -13,11 +13,14 @@ from utils.inline_keyboards import admin_panel, get_all_goods_keyboard, return_t
 async def send_admin_panel(message: types.Message):
     await message.answer("<b>Вы вошли в админ-панель для товаров</b>", reply_markup=admin_panel)
 
+    await Get_Goods_Page.first()
 
-@dp.callback_query_handler(text="add_goods")
-async def add_good(callback: types.CallbackQuery):
+
+@dp.callback_query_handler(text="add_goods", state=Get_Goods_Page.page)
+async def add_good(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("<b>Введите название книги:</b>")
 
+    await state.reset_state()
     await Add_Good_State.first()
 
 
@@ -62,10 +65,12 @@ async def get_image(message: types.Message, state: FSMContext):
     price = state_data["price"]
     image = state_data["image"]
 
-    await message.answer("<b>Товар успешно добавлен!</b>")
+    await message.answer("<b>Товар успешно добавлен!</b>", reply_markup=admin_panel)
 
     await add_good_to_db(name, author, price, image)
     await state.reset_state()
+
+    await Get_Goods_Page.first()
 
 
 @dp.callback_query_handler(Is_Admin(), text="remove_goods")
@@ -74,14 +79,28 @@ async def send_remove_goods(callback: types.CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=await get_all_goods_keyboard("remove"))
 
 
-@dp.callback_query_handler(Is_Admin(), text_contains="remove_good")
-async def remove_good(callback: types.CallbackQuery):
+@dp.callback_query_handler(Is_Admin(), text="remove_goods", state=Get_Goods_Page.page)
+async def send_remove_goods(callback: types.CallbackQuery, state: FSMContext):
+    keyboards = await get_all_goods_keyboard("remove")
+
+    await callback.message.edit_text("<b>Нажмите на товар чтобы удалить его:</b>")
+    await callback.message.edit_reply_markup(reply_markup=keyboards[1])
+
+    async with state.proxy() as data:
+        data["keyboards"] = keyboards
+        data["page"] = 1
+
+
+@dp.callback_query_handler(Is_Admin(), text_contains="remove_good", state=Get_Goods_Page.page)
+async def remove_good(callback: types.CallbackQuery, state: FSMContext):
     callback_data = callback.data.strip().split(":")[1:]
     good_id = callback_data[0]
 
     await callback.message.edit_text("<b>Товар был успешно удалён!</b>")
     await callback.message.edit_reply_markup(reply_markup=return_to_admin_panel)
     await remove_good_from_db(good_id)
+
+    await state.reset_state()
 
 
 @dp.callback_query_handler(Is_Admin(), text="return_to_admin_panel")
@@ -90,6 +109,8 @@ async def return_to_admin_menu(callback: types.CallbackQuery):
     await send_admin_panel(callback.message)
 
 
-@dp.callback_query_handler(Is_Admin(), text="exit_from_admin_panel")
-async def exit_from_admin_panel(callback: types.CallbackQuery):
+@dp.callback_query_handler(Is_Admin(), text="exit_from_admin_panel", state=Get_Goods_Page.page)
+async def exit_from_admin_panel(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.delete()
+
+    await state.reset_state()
